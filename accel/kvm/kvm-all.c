@@ -3191,6 +3191,11 @@ int kvm_ioctl(KVMState *s, int type, ...)
     return ret;
 }
 
+int kvm_vmfd(KVMState *s)
+{
+    return s->vmfd;
+}
+
 int kvm_vm_ioctl(KVMState *s, int type, ...)
 {
     int ret;

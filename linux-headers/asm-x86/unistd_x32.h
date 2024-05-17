@@ -328,6 +328,7 @@
 #define __NR_lsm_set_self_attr (__X32_SYSCALL_BIT + 460)
 #define __NR_lsm_list_modules (__X32_SYSCALL_BIT + 461)
 #define __NR_mseal (__X32_SYSCALL_BIT + 462)
+#define __NR_uretprobe (__X32_SYSCALL_BIT + 467)
 #define __NR_rt_sigaction (__X32_SYSCALL_BIT + 512)
 #define __NR_rt_sigreturn (__X32_SYSCALL_BIT + 513)
 #define __NR_ioctl (__X32_SYSCALL_BIT + 514)

@@ -375,6 +375,7 @@
 #define __NR_lsm_set_self_attr 460
 #define __NR_lsm_list_modules 461
 #define __NR_mseal 462
+#define __NR_uretprobe 467
 
 
 #endif /* _ASM_UNISTD_64_H */

@@ -59,4 +59,6 @@ extern SevAttestationReport *
 sev_get_attestation_report(const char *mnonce, Error **errp);
 extern bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp);
 
+extern bool sev_snp_async_schedule_vmpl(int target_vmpl);
+
 #endif

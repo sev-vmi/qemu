@@ -6,3 +6,5 @@ i386_softmmu_ss.add(when: 'CONFIG_KVM', if_true: files(
 ))
 
 i386_softmmu_ss.add(when: 'CONFIG_HYPERV', if_true: files('hyperv.c'), if_false: files('hyperv-stub.c'))
+
+i386_softmmu_ss.add(when: 'CONFIG_SEV', if_true: files('sev_svsm.c'), if_false: files('sev_svsm-stub.c'))

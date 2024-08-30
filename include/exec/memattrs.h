@@ -49,6 +49,9 @@ typedef struct MemTxAttrs {
     unsigned int target_tlb_bit0 : 1;
     unsigned int target_tlb_bit1 : 1;
     unsigned int target_tlb_bit2 : 1;
+
+    // for blocking access to VMPL0-privileged MMIO regions (TODO: if secure wouldn't already be used by SMM, we should reuse secure -- could in theory still consider doing that)
+    unsigned int vmpl0 : 1; // 1: in VMPL0 mode; 0: in VMPL1 (, 2, or 3)
 } MemTxAttrs;
 
 /* Bus masters which don't specify any attributes will get this,

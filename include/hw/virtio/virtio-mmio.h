@@ -59,6 +59,7 @@ struct VirtIOMMIOProxy {
     MemoryRegion iomem;
     qemu_irq irq;
     bool legacy;
+    bool vmpl0_restricted;
     uint32_t flags;
     /* Guest accessible state needing migration and reset */
     uint32_t host_features_sel;

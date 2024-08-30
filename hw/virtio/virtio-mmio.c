@@ -35,6 +35,16 @@
 #include "qemu/log.h"
 #include "trace.h"
 
+// TODO: not allowed, so need to generalize to "privileged" API and then provide
+// a specific implementation for i386 under the hood (and a generic one always returning "unsupported" for all other architectures)
+//#if defined(TARGET_I386)
+//#include "target/i386/sev_i386.h"
+//#endif
+#include "hw/core/cpu.h"
+
+//#define SYSSEC_DEBUG_PRINTS 1
+#undef SYSSEC_DEBUG_PRINTS
+
 static bool virtio_mmio_ioeventfd_enabled(DeviceState *d)
 {
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
@@ -241,6 +251,24 @@ static uint64_t virtio_mmio_read(void *opaque, hwaddr offset, unsigned size)
         return 0;
     }
     return 0;
+}
+
+static MemTxResult virtio_mmio_read_with_attrs(void *opaque, hwaddr addr, uint64_t *data, unsigned size, MemTxAttrs attrs) {
+    VirtIOMMIOProxy *proxy = (VirtIOMMIOProxy *)opaque;
+
+    // is just returning in error ok? afterall, the access is NOT allowed (probably should return a permission error even earlier)
+    if(proxy->vmpl0_restricted && !attrs.vmpl0) {
+        error_report("syssec: blocked read access to VMPL0-restricted virtio-mmio bus");
+        return MEMTX_ERROR;
+    } else if(proxy->vmpl0_restricted) {
+        //info_report("syssec: mmio read access by VMPL0 on restricted mmio bus");
+    }
+
+    *data = virtio_mmio_read(opaque, addr, size);
+#ifdef SYSSEC_DEBUG_PRINTS
+    info_report("MMIO read of %#lx FROM %#lx", *data, addr);
+#endif
+    return MEMTX_OK;
 }
 
 static void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
@@ -516,15 +544,38 @@ static void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
     }
 }
 
+static MemTxResult virtio_mmio_write_with_attrs(void *opaque, hwaddr addr, uint64_t data, unsigned size, MemTxAttrs attrs)
+{
+    VirtIOMMIOProxy *proxy = (VirtIOMMIOProxy *)opaque;
+
+    // is just returning an error ok?
+    if(proxy->vmpl0_restricted && !attrs.vmpl0) {
+        error_report("syssec: blocked write access to VMPL0-restricted virtio-mmio bus");
+        return MEMTX_ERROR;
+    } else if (proxy->vmpl0_restricted) {
+#ifdef SYSSEC_DEBUG_PRINTS
+        //info_report("syssec: vmpl0 privileged write access");
+        info_report("MMIO write of %#lx to %#lx", data, addr);
+#endif
+    }
+
+    virtio_mmio_write(opaque, addr, data, size);
+    return MEMTX_OK;
+}
+
 static const MemoryRegionOps virtio_legacy_mem_ops = {
-    .read = virtio_mmio_read,
-    .write = virtio_mmio_write,
+    .read_with_attrs = virtio_mmio_read_with_attrs,
+    .write_with_attrs = virtio_mmio_write_with_attrs,
+    //.read = virtio_mmio_read,
+    //.write = virtio_mmio_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static const MemoryRegionOps virtio_mem_ops = {
-    .read = virtio_mmio_read,
-    .write = virtio_mmio_write,
+    .read_with_attrs = virtio_mmio_read_with_attrs,
+    .write_with_attrs = virtio_mmio_write_with_attrs,
+    //.read = virtio_mmio_read,
+    //.write = virtio_mmio_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
@@ -539,7 +590,19 @@ static void virtio_mmio_update_irq(DeviceState *opaque, uint16_t vector)
     }
     level = (qatomic_read(&vdev->isr) != 0);
     trace_virtio_mmio_setting_irq(level);
-    qemu_set_irq(proxy->irq, level);
+
+    /* For VMPL0 MMIO bus, we currently do not support #HV-based events
+     * but rather request direct scheduling of VMPL0 on a vCPU. */
+    if(proxy->vmpl0_restricted) {
+#ifdef SYSSEC_DEBUG_PRINTS
+        info_report("Blocked IRQ, gonna schedule instead");
+#endif
+#define VMPL0 0
+        async_schedule_arch_privileged(VMPL0);
+#undef VMPL0
+    } else {
+        qemu_set_irq(proxy->irq, level);
+    }
 }
 
 static int virtio_mmio_load_config(DeviceState *opaque, QEMUFile *f)
@@ -725,6 +788,7 @@ static Property virtio_mmio_properties[] = {
     DEFINE_PROP_BOOL("force-legacy", VirtIOMMIOProxy, legacy, true),
     DEFINE_PROP_BIT("ioeventfd", VirtIOMMIOProxy, flags,
                     VIRTIO_IOMMIO_FLAG_USE_IOEVENTFD_BIT, true),
+    DEFINE_PROP_BOOL("vmpl-privileged", VirtIOMMIOProxy, vmpl0_restricted, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -754,6 +818,21 @@ static void virtio_mmio_realizefn(DeviceState *d, Error **errp)
                               &virtio_mem_ops, proxy,
                               TYPE_VIRTIO_MMIO, 0x200);
     }
+
+    /* VMPL0 privileged only makes sense with SEV-SNP enabled */
+    // TODO: need to generalize as we cannot use i386-specific code here
+    //if (!sev_snp_enabled()) {
+    //    if (proxy->vmpl0_restricted)
+    //        error_report("VMPL0-privileged MMIO bus only supported for SEV-SNP");
+    //    proxy->vmpl0_restricted = false;
+    //}
+
+    // debug print
+    if (proxy->vmpl0_restricted)
+        info_report("syssec: VMPL0 restriction ENabled");
+    else 
+        info_report("syssec: VMPL0 restriction DISabled");
+
     sysbus_init_mmio(sbd, &proxy->iomem);
 }
 

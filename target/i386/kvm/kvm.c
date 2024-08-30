@@ -31,6 +31,7 @@
 #include "sev_i386.h"
 #include "hyperv.h"
 #include "hyperv-proto.h"
+#include "sev_svsm.h"
 
 #include "exec/gdbstub.h"
 #include "qemu/host-utils.h"
@@ -52,6 +53,11 @@
 #include "migration/blocker.h"
 #include "exec/memattrs.h"
 #include "trace.h"
+
+#include "target/i386/sev_i386.h" // sev_snp_enabled(..)
+
+//#define SYSSEC_DEBUG_PRINTS 1
+#undef SYSSEC_DEBUG_PRINTS
 
 //#define DEBUG_KVM
 
@@ -1636,6 +1642,12 @@ int kvm_arch_init_vcpu(CPUState *cs)
         cpuid_i = hyperv_fill_cpuids(cs, cpuid_data.entries);
         kvm_base = KVM_CPUID_SIGNATURE_NEXT;
         has_msr_hv_hypercall = true;
+    }
+
+    // Init our run fields to 0 (just to be sure)
+    if (sev_snp_enabled()) {
+        cs->kvm_run->target_vmpl = 0;
+        cs->kvm_run->request_vmpl_switch = 0;
     }
 
     if (cpu->expose_kvm) {
@@ -3975,6 +3987,9 @@ static int kvm_get_vcpu_events(X86CPU *cpu)
     }
 
     if (events.flags & KVM_VCPUEVENT_VALID_SMM) {
+        // TODO: should we also switch our HF_VMPL0_MASK on injected switch to VMPL0??
+        // -- on the other hand: we actually just consider it on exit for vmmio atm;
+        // -- might not be bullet proof but should be fine for the moment;
         if (events.smi.smm) {
             env->hflags |= HF_SMM_MASK;
         } else {
@@ -4407,6 +4422,22 @@ MemTxAttrs kvm_arch_post_run(CPUState *cpu, struct kvm_run *run)
     if (run->flags & KVM_RUN_X86_BUS_LOCK) {
         kvm_rate_limit_on_bus_lock();
     }
+    // Set VMPL0 flag to mark privileged VMPL0 accesses (e.g., to MMIO region)
+    if (sev_snp_enabled()) {
+        // TODO: what about initialization of curr_vmpl field?
+        if (run->curr_vmpl == 0) {
+#ifdef SYSSEC_DEBUG_PRINTS
+            if(!(env->hflags & HF_VMPL0_MASK)) info_report("syssec: vmpl => 0");
+#endif
+            env->hflags |= HF_VMPL0_MASK;
+        } else {
+#ifdef SYSSEC_DEBUG_PRINTS
+            if(env->hflags & HF_VMPL0_MASK) info_report("syssec: vmpl => 1");
+#endif
+            env->hflags &= ~HF_VMPL0_MASK;
+        }
+        //info_report("syssec: curr_vmpl: %d", run->curr_vmpl);
+    }
 
     /* We need to protect the apic state against concurrent accesses from
      * different threads in case the userspace irqchip is used. */
@@ -4797,6 +4828,10 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     case KVM_EXIT_X86_BUS_LOCK:
         /* already handled in kvm_arch_post_run */
         ret = 0;
+        break;
+    // VMI hypercalls
+    case KVM_EXIT_SVSM:
+        ret = kvm_svsm_handle_exit(cpu, &run->svsm);
         break;
     default:
         fprintf(stderr, "KVM: unknown exit reason %d\n", run->exit_reason);

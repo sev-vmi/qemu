@@ -171,6 +171,7 @@ typedef enum X86Seg {
 #define HF_IOBPT_SHIFT      24 /* an io breakpoint enabled */
 #define HF_MPX_EN_SHIFT     25 /* MPX Enabled (CR4+XCR0+BNDCFGx) */
 #define HF_MPX_IU_SHIFT     26 /* BND registers in-use */
+#define HF_VMPL0_SHIFT      27 /* vCPU in VMPL0 mode */
 
 #define HF_CPL_MASK          (3 << HF_CPL_SHIFT)
 #define HF_INHIBIT_IRQ_MASK  (1 << HF_INHIBIT_IRQ_SHIFT)
@@ -196,6 +197,7 @@ typedef enum X86Seg {
 #define HF_IOBPT_MASK        (1 << HF_IOBPT_SHIFT)
 #define HF_MPX_EN_MASK       (1 << HF_MPX_EN_SHIFT)
 #define HF_MPX_IU_MASK       (1 << HF_MPX_IU_SHIFT)
+#define HF_VMPL0_MASK        (1 << HF_VMPL0_SHIFT)
 
 /* hflags2 */
 
@@ -2111,7 +2113,7 @@ static inline uint32_t cpu_compute_eflags(CPUX86State *env)
 
 static inline MemTxAttrs cpu_get_mem_attrs(CPUX86State *env)
 {
-    return ((MemTxAttrs) { .secure = (env->hflags & HF_SMM_MASK) != 0 });
+    return ((MemTxAttrs) { .secure = (env->hflags & HF_SMM_MASK) != 0, .vmpl0 = (env->hflags & HF_VMPL0_MASK) != 0, });
 }
 
 static inline int32_t x86_get_a20_mask(CPUX86State *env)

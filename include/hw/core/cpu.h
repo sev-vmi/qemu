@@ -717,6 +717,11 @@ void run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data);
 void async_run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data);
 
 /**
+ * async_schedule_arch_privileged:
+*/
+bool async_schedule_arch_privileged(int arch_target_privilege);
+
+/**
  * async_safe_run_on_cpu:
  * @cpu: The vCPU to run on.
  * @func: The function to be executed.

@@ -834,6 +834,8 @@
 #
 # @svsm: file name for the SVSM image
 #
+# @svsm-sock: id of the socket network device for remote connectivity
+#
 # Since: 6.2
 ##
 { 'struct': 'SevSnpGuestProperties',
@@ -846,7 +848,8 @@
             '*id-auth': 'str',
             '*auth-key-enabled': 'bool',
             '*host-data': 'str',
-            '*svsm': 'str' } }
+            '*svsm': 'str',
+            '*svsm-sock': 'str' } }
 
 ##
 # @ObjectType:

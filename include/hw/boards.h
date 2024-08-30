@@ -316,6 +316,8 @@ struct MachineState {
     bool usb_disabled;
     char *firmware;
     char *svsm;
+    // TODO: char * is outdated; should switch to a bool ("enable virto-mmio for vmpl0")
+    char *svsm_sock;
     bool iommu;
     bool suppress_vmdesc;
     bool enable_graphics;

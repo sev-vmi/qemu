@@ -40,6 +40,11 @@
 #include "hw/i386/e820_memory_layout.h"
 #include "hw/nvram/fw_cfg.h"
 
+#include "hw/virtio/virtio-mmio.h"
+
+//#define SYSSEC_DEBUG_PRINTS 1
+#undef SYSSEC_DEBUG_PRINTS
+
 #define TYPE_SEV_COMMON "sev-common"
 OBJECT_DECLARE_SIMPLE_TYPE(SevCommonState, SEV_COMMON)
 #define TYPE_SEV_GUEST "sev-guest"
@@ -858,6 +863,65 @@ sev_get_info(void)
     }
 
     return info;
+}
+
+// Note that this function is scheduled at the target vCPU itself, i.e., no need for locks.
+static void
+_schedule_vmpl(CPUState *cs, run_on_cpu_data data)
+{
+    struct kvm_run *run = cs->kvm_run;
+    __u8 vmpl;
+
+    // we currently only schedule VMPL0 that way
+    if (data.host_int != 0) return;
+    vmpl = (__u8) data.host_int;
+
+    // even if we are already in VMPL0, we set a scheduling request,
+    // because might be in the middle of leaving VMPL0
+
+    // if a switch request is already pending, keep it, we anyway only schedule VMPL0 atm
+    if (run->request_vmpl_switch) return;
+
+    // request switch from KVM
+    run->target_vmpl = vmpl;
+    run->request_vmpl_switch = 1;
+
+#ifdef SYSSEC_DEBUG_PRINTS
+    info_report("Requested scheduling of VMPL %u\n", vmpl);
+#endif
+}
+
+bool
+sev_snp_async_schedule_vmpl(int target_vmpl)
+{
+    CPUState *vcpu;
+    //int switch_request;
+
+    // we currently only schedule VMPL0 that way
+    if (target_vmpl != 0) return false;
+
+/* TODO: future support -- warning: we must be careful how we implement PAUSE in that case
+    if (current_cpu) {
+        vcpu = current_cpu;
+    } else {
+        vcpu = qemu_get_cpu(0);
+    }
+*/
+
+    vcpu = qemu_get_cpu(0);
+#ifdef SYSSEC_DEBUG_PRINTS
+    info_report("Enqueue scheduling requst to VMPL %d at vCPU 0\n", target_vmpl);
+#endif
+
+    // TODO: if this is too expensive, shouldn't do too often?? (what about virtio 'irq' masking?)
+    async_run_on_cpu(vcpu, _schedule_vmpl, RUN_ON_CPU_HOST_INT(target_vmpl));
+    return true;
+}
+
+bool
+async_schedule_arch_privileged(int arch_target_privilege)
+{
+    return sev_snp_async_schedule_vmpl(arch_target_privilege);
 }
 
 static int
@@ -2098,6 +2162,7 @@ static int sev_svsm_save_reset_state(void *flash_ptr, uint64_t flash_size)
 void sev_snp_svsm_init(MachineState *ms)
 {
     SevCommonState *sev_common = SEV_COMMON(ms->cgs);
+    SevSnpGuestState *sev_snp_guest = SEV_SNP_GUEST(sev_common);
     SvsmInfoBlock *info;
     char *svsm_filename;
     MemoryRegion *svsm;
@@ -2156,11 +2221,40 @@ void sev_snp_svsm_init(MachineState *ms)
 
     sev_svsm_save_reset_state(svsm_data, svsm_size);
 
-    ret = sev_snp_launch_update(SEV_SNP_GUEST(sev_common), info->svsm_gpa,
+    ret = sev_snp_launch_update(sev_snp_guest, info->svsm_gpa,
                                 data, svsm_size, KVM_SEV_SNP_PAGE_TYPE_NORMAL, VMPL0);
     if (ret < 0) {
         error_report("qemu: failed to encrypt SVSM binary");
         exit(1);
+    }
+
+    // setup remote channel object/s
+    // TODO: the netdev ID from svsm_sock is unused/outdated; should make it bool flag instead for enabling virtio-mmio for vmpl0
+    if(ms->svsm_sock) {
+        //info_report("qemu: SVSM socket netdev ID specified as %s", ms->svsm_sock);
+
+        /* virtio-mmio */
+        hwaddr mmio_config_base = info->svsm_gpa - TARGET_PAGE_SIZE;
+        DeviceState *dev_mmio; // type as returned by DEVICE(.) macro
+        SysBusDevice *sysbus_mmio_dev;
+
+        // based on hw/mk68/virt.c
+        dev_mmio = qdev_new(TYPE_VIRTIO_MMIO);
+        qdev_prop_set_bit(dev_mmio, "force-legacy", false);
+        qdev_prop_set_bit(dev_mmio, "vmpl-privileged", true);
+
+        sysbus_mmio_dev = SYS_BUS_DEVICE(dev_mmio);
+        sysbus_realize_and_unref(sysbus_mmio_dev, &error_fatal);
+
+        //sysbus_connect_irq(sysbus_mmio_dev, 0, PIC_GPIO(VIRT_VIRTIO_IRQ_BASE + i));
+        sysbus_mmio_map(sysbus_mmio_dev, 0, mmio_config_base);
+
+
+
+
+        if(!dev_mmio) {
+            error_report("qemu: Failed virtio-mmio device creation");
+        }
     }
 }
 

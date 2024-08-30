@@ -450,6 +450,21 @@ static void machine_set_svsm(Object *obj, const char *value, Error **errp)
     ms->svsm = g_strdup(value);
 }
 
+static char *machine_get_svsm_sock(Object *obj, Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+
+    return g_strdup(ms->svsm_sock);
+}
+
+static void machine_set_svsm_sock(Object *obj, const char *value, Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+
+    g_free(ms->svsm_sock);
+    ms->svsm_sock = g_strdup(value);
+}
+
 static void machine_set_suppress_vmdesc(Object *obj, bool value, Error **errp)
 {
     MachineState *ms = MACHINE(obj);
@@ -1037,6 +1052,13 @@ static void machine_class_init(ObjectClass *oc, void *data)
         machine_get_svsm, machine_set_svsm);
     object_class_property_set_description(oc, "svsm",
         "SVSM image");
+
+    // TODO: should be boolean flag for vmpl0-virtio-mmio yes/no instead
+    //      (the netdev ID idea is outdated)
+    object_class_property_add_str(oc, "svsm-sock",
+        machine_get_svsm_sock, machine_set_svsm_sock);
+    object_class_property_set_description(oc, "svsm-sock",
+        "SVSM channel socket netdev ID");
 
     object_class_property_add_bool(oc, "suppress-vmdesc",
         machine_get_suppress_vmdesc, machine_set_suppress_vmdesc);

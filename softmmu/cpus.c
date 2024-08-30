@@ -570,6 +570,24 @@ void pause_all_vcpus(void)
     qemu_mutex_lock_iothread();
 }
 
+// TODO: probably should change such that it assume running on iothread
+void request_pause_all_vcpus_except_current(void) {
+    CPUState *cpu;
+    int skip_idx;
+
+    if (!current_cpu) return;
+    skip_idx = current_cpu->cpu_index;
+
+    // TODO: does this any sense in our case? (we are not stopping all)
+    //qemu_clock_enable(QEMU_CLOCK_VIRTUAL, false);
+
+    CPU_FOREACH(cpu) {
+        if (cpu->cpu_index == skip_idx) continue; // skip
+        cpu->stop = true;
+        qemu_cpu_kick(cpu);
+    }
+}
+
 void cpu_resume(CPUState *cpu)
 {
     cpu->stop = false;
@@ -587,6 +605,21 @@ void resume_all_vcpus(void)
 
     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, true);
     CPU_FOREACH(cpu) {
+        cpu_resume(cpu);
+    }
+}
+
+// TODO: probably should change such that it assume running on iothread
+void request_resume_all_vcpus_except_current(void)
+{
+    CPUState *cpu;
+    int skip_idx;
+
+    if (!current_cpu) return;
+    skip_idx = current_cpu->cpu_index;
+
+    CPU_FOREACH(cpu) {
+        if (cpu->cpu_index == skip_idx) continue; // skip
         cpu_resume(cpu);
     }
 }
